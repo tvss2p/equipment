@@ -60,10 +60,17 @@ OneSignalDeferred.push(async function(OneSignal) {
   .notify-fab{position:fixed;right:58px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483647;width:auto;min-width:124px;height:34px;margin:0;padding:0 10px;border:1px solid #bbf7d0;border-radius:999px;background:#f0fdf4;color:#047857;box-shadow:0 6px 16px rgba(15,23,42,.12);font-size:12px;line-height:32px;white-space:nowrap;opacity:.90;cursor:default}
   .notify-fab.is-off{border-color:#fed7aa;background:#fff7ed;color:#c2410c;cursor:pointer}
   .notify-fab:hover,.notify-fab:focus-visible{opacity:1}
+  .notify-modal-overlay{position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:20px}
+  .notify-modal{background:#fff;border-radius:16px;max-width:320px;width:100%;padding:20px;text-align:left;box-shadow:0 20px 40px rgba(15,23,42,.25)}
+  .notify-modal h2{font-size:15px;font-weight:700;margin:0 0 10px;color:#0f172a}
+  .notify-modal p{font-size:13px;line-height:1.6;color:#334155;margin:0 0 16px;white-space:pre-wrap}
+  .notify-modal button{width:100%;font-size:14px;font-weight:700;padding:10px 0;border-radius:10px;background:#ea580c;color:#fff;border:none;cursor:pointer}
+  .notify-modal button:active{background:#c2410c}
   .is-printing-app .notify-fab,
+  .is-printing-app .notify-modal-overlay,
   .is-printing-app .onesignal-slidedown-container,
   .is-printing-app #onesignal-slidedown-container{display:none!important}
-  @media print{.notify-fab,.onesignal-slidedown-container,#onesignal-slidedown-container{display:none!important}}
+  @media print{.notify-fab,.notify-modal-overlay,.onesignal-slidedown-container,#onesignal-slidedown-container{display:none!important}}
 </style>
 </head>
 <body>
@@ -114,6 +121,43 @@ function updateNotificationStatus(btn,on){
   btn.textContent=on?"通知設定：オンです":"通知設定：オフ";
   btn.setAttribute("aria-label",on?"通知設定はオンです":"通知設定をオンにする");
 }
+function detectPlatform(){
+  const ua=navigator.userAgent||"";
+  if(/iphone|ipad|ipod/i.test(ua))return"ios";
+  if(/android/i.test(ua))return"android";
+  return"other";
+}
+function notificationGuidanceText(){
+  const p=detectPlatform();
+  if(p==="ios"){
+    return"通知がブロックされています。この画面をホーム画面に追加して開いている場合は、iPhoneの「設定」アプリ→「備品購入」（または追加したアプリ名）→「通知」を開き、通知を許可してください。Safariで直接開いている場合は、「設定」→「Safari」→「Webサイトの設定」から通知を許可してください。";
+  }
+  if(p==="android"){
+    return"通知がブロックされています。端末の「設定」→「アプリ」→「備品購入」（または該当アプリ）→「通知」をオンにしてください。ブラウザで開いている場合は、Chromeの「設定」→「サイトの設定」→「通知」からこのサイトを許可に変更してください。";
+  }
+  return"通知がブロックされています。ブラウザのサイト設定からこのサイトの通知を許可に変更してください。";
+}
+function showNotificationGuidance(){
+  if(document.querySelector(".notify-modal-overlay"))return;
+  const overlay=document.createElement("div");
+  overlay.className="notify-modal-overlay";
+  const modal=document.createElement("div");
+  modal.className="notify-modal";
+  const h=document.createElement("h2");
+  h.textContent="通知を有効にする方法";
+  const p=document.createElement("p");
+  p.textContent=notificationGuidanceText();
+  const closeBtn=document.createElement("button");
+  closeBtn.type="button";
+  closeBtn.textContent="閉じる";
+  closeBtn.addEventListener("click",()=>overlay.remove());
+  overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove();});
+  modal.appendChild(h);
+  modal.appendChild(p);
+  modal.appendChild(closeBtn);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
 function autoPromptPushOnce(){
   window.OneSignalDeferred.push(async function(OneSignal){
     const promptedKey="equipmentPushAutoPrompted";
@@ -149,6 +193,10 @@ function showNotificationStatus(){
     updateNotificationStatus(btn,Notification.permission==="granted"||OneSignal.User.PushSubscription.optedIn);
     btn.addEventListener("click",async()=>{
       if(Notification.permission==="granted"||OneSignal.User.PushSubscription.optedIn)return;
+      if(Notification.permission==="denied"){
+        showNotificationGuidance();
+        return;
+      }
       btn.disabled=true;
       const label=btn.textContent;
       btn.textContent="設定中";
@@ -172,13 +220,39 @@ window.addEventListener("message",e=>{
     document.documentElement.classList.remove("is-printing-app");
   }
 });
+const REMEMBER_MS=3*60*60*1000;
+const AUTH_KEY="equipmentAuthCache";
+function loadCachedAuth(){
+  try{
+    const raw=localStorage.getItem(AUTH_KEY);
+    if(!raw)return null;
+    const data=JSON.parse(raw);
+    if(!data||!data.pw||!data.ts)return null;
+    if(Date.now()-data.ts>REMEMBER_MS)return null;
+    return data.pw;
+  }catch(e){
+    return null;
+  }
+}
+function saveCachedAuth(pwVal){
+  try{
+    localStorage.setItem(AUTH_KEY,JSON.stringify({pw:pwVal,ts:Date.now()}));
+  }catch(e){}
+}
+function clearCachedAuth(){
+  try{
+    localStorage.removeItem(AUTH_KEY);
+  }catch(e){}
+}
 const pw=document.getElementById("pw"),go=document.getElementById("go"),err=document.getElementById("err");
 let busy=false;
-async function attempt(){
-  if(busy||!pw.value)return;
+async function attempt(pwOverride){
+  const value=pwOverride!=null?pwOverride:pw.value;
+  if(busy||!value)return;
   busy=true;err.textContent="";go.disabled=true;go.textContent="解錠中…";
   try{
-    const html=await unlock(pw.value);
+    const html=await unlock(value);
+    saveCachedAuth(value);
     document.body.innerHTML="";
     const f=document.createElement("iframe");
     f.title="備品購入";
@@ -189,12 +263,22 @@ async function attempt(){
     showNotificationStatus();
   }catch(e){
     busy=false;go.disabled=false;go.textContent="解錠する";
-    err.textContent="パスワードが違います";pw.value="";pw.focus();
+    if(pwOverride!=null){
+      clearCachedAuth();
+      pw.value="";pw.focus();
+    }else{
+      err.textContent="パスワードが違います";pw.value="";pw.focus();
+    }
   }
 }
-go.addEventListener("click",attempt);
+go.addEventListener("click",()=>attempt());
 pw.addEventListener("keydown",e=>{if(e.key==="Enter")attempt();});
-pw.focus();
+const cachedPw=loadCachedAuth();
+if(cachedPw){
+  attempt(cachedPw);
+}else{
+  pw.focus();
+}
 </script>
 </body>
 </html>
