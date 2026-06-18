@@ -44,7 +44,8 @@ OneSignalDeferred.push(async function(OneSignal) {
   button:active{background:#c2410c}
   button:disabled{opacity:.6;cursor:default}
   .err{color:#dc2626;font-size:13px;margin-top:12px;min-height:18px}
-  .notify-fab{position:fixed;right:58px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483647;width:auto;min-width:52px;height:34px;margin:0;padding:0 10px;border-radius:999px;box-shadow:0 6px 16px rgba(15,23,42,.16);font-size:12px;line-height:34px;white-space:nowrap;opacity:.72}
+  .notify-fab{position:fixed;right:58px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483647;width:auto;min-width:124px;height:34px;margin:0;padding:0 10px;border:1px solid #bbf7d0;border-radius:999px;background:#f0fdf4;color:#047857;box-shadow:0 6px 16px rgba(15,23,42,.12);font-size:12px;line-height:32px;white-space:nowrap;opacity:.90;cursor:default}
+  .notify-fab.is-off{border-color:#fed7aa;background:#fff7ed;color:#c2410c;cursor:pointer}
   .notify-fab:hover,.notify-fab:focus-visible{opacity:1}
 </style>
 </head>
@@ -75,25 +76,26 @@ function requestPushPermission(btn){
     window.OneSignalDeferred.push(async function(OneSignal){
       try{
         if(!OneSignal.Notifications.isPushSupported()||Notification.permission==="denied"){
-          if(btn)btn.remove();
+          if(btn)updateNotificationStatus(btn,false);
           resolve(false);
           return;
         }
         await OneSignal.Notifications.requestPermission();
         await OneSignal.User.PushSubscription.optIn();
         const enabled=OneSignal.Notifications.permission||OneSignal.User.PushSubscription.optedIn;
-        if(enabled||Notification.permission==="granted"){
-          if(btn)btn.remove();
-        }else if(btn){
-          btn.textContent="通知";
-          btn.disabled=false;
-        }
+        if(btn)updateNotificationStatus(btn,enabled||Notification.permission==="granted");
         resolve(enabled);
       }catch(e){
         reject(e);
       }
     });
   });
+}
+function updateNotificationStatus(btn,on){
+  btn.disabled=false;
+  btn.classList.toggle("is-off",!on);
+  btn.textContent=on?"通知設定：オンです":"通知設定：オフ";
+  btn.setAttribute("aria-label",on?"通知設定はオンです":"通知設定をオンにする");
 }
 function autoPromptPushOnce(){
   window.OneSignalDeferred.push(async function(OneSignal){
@@ -111,25 +113,25 @@ function autoPromptPushOnce(){
       if(Notification.permission==="granted"){
         await OneSignal.User.PushSubscription.optIn();
         const btn=document.querySelector(".notify-fab");
-        if(btn)btn.remove();
+        if(btn)updateNotificationStatus(btn,true);
       }
     }catch(e){
       console.warn("OneSignal auto prompt failed",e);
     }
   });
 }
-function showNotificationButton(){
+function showNotificationStatus(){
   if(document.querySelector(".notify-fab"))return;
   window.OneSignalDeferred.push(function(OneSignal){
-    if(!OneSignal.Notifications.isPushSupported()||Notification.permission==="granted"||Notification.permission==="denied"||OneSignal.User.PushSubscription.optedIn){
+    if(!OneSignal.Notifications.isPushSupported()){
       return;
     }
     const btn=document.createElement("button");
     btn.type="button";
     btn.className="notify-fab";
-    btn.textContent="通知";
-    btn.setAttribute("aria-label","通知を有効にする");
+    updateNotificationStatus(btn,Notification.permission==="granted"||OneSignal.User.PushSubscription.optedIn);
     btn.addEventListener("click",async()=>{
+      if(Notification.permission==="granted"||OneSignal.User.PushSubscription.optedIn)return;
       btn.disabled=true;
       const label=btn.textContent;
       btn.textContent="設定中";
@@ -158,7 +160,7 @@ async function attempt(){
     document.body.appendChild(f);
     f.srcdoc=html;
     autoPromptPushOnce();
-    showNotificationButton();
+    showNotificationStatus();
   }catch(e){
     busy=false;go.disabled=false;go.textContent="解錠する";
     err.textContent="パスワードが違います";pw.value="";pw.focus();
