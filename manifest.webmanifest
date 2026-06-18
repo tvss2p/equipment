@@ -1,6 +1,9 @@
 {
+  "id": "/equipment/",
   "name": "備品購入",
   "short_name": "備品購入",
+  "start_url": "/equipment/",
+  "scope": "/equipment/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ea580c",
