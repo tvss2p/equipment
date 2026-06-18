@@ -75,7 +75,7 @@ function requestPushPermission(btn){
     window.OneSignalDeferred.push(async function(OneSignal){
       try{
         if(!OneSignal.Notifications.isPushSupported()||Notification.permission==="denied"){
-          btn.remove();
+          if(btn)btn.remove();
           resolve(false);
           return;
         }
@@ -83,8 +83,8 @@ function requestPushPermission(btn){
         await OneSignal.User.PushSubscription.optIn();
         const enabled=OneSignal.Notifications.permission||OneSignal.User.PushSubscription.optedIn;
         if(enabled||Notification.permission==="granted"){
-          btn.remove();
-        }else{
+          if(btn)btn.remove();
+        }else if(btn){
           btn.textContent="通知";
           btn.disabled=false;
         }
@@ -93,6 +93,29 @@ function requestPushPermission(btn){
         reject(e);
       }
     });
+  });
+}
+function autoPromptPushOnce(){
+  window.OneSignalDeferred.push(async function(OneSignal){
+    const promptedKey="equipmentPushAutoPrompted";
+    if(!OneSignal.Notifications.isPushSupported()||Notification.permission!=="default"||OneSignal.User.PushSubscription.optedIn||localStorage.getItem(promptedKey)==="1"){
+      return;
+    }
+    localStorage.setItem(promptedKey,"1");
+    try{
+      if(OneSignal.Slidedown&&OneSignal.Slidedown.promptPush){
+        await OneSignal.Slidedown.promptPush({force:true});
+      }else{
+        await OneSignal.Notifications.requestPermission();
+      }
+      if(Notification.permission==="granted"){
+        await OneSignal.User.PushSubscription.optIn();
+        const btn=document.querySelector(".notify-fab");
+        if(btn)btn.remove();
+      }
+    }catch(e){
+      console.warn("OneSignal auto prompt failed",e);
+    }
   });
 }
 function showNotificationButton(){
@@ -134,6 +157,7 @@ async function attempt(){
     f.style.cssText="position:fixed;inset:0;width:100%;height:100%;border:0";
     document.body.appendChild(f);
     f.srcdoc=html;
+    autoPromptPushOnce();
     showNotificationButton();
   }catch(e){
     busy=false;go.disabled=false;go.textContent="解錠する";
