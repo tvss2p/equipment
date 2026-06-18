@@ -19,6 +19,19 @@ OneSignalDeferred.push(async function(OneSignal) {
     appId: "cd25ba1b-2e6f-4585-8dc3-5c6203d36a24",
     serviceWorkerPath: "equipment/push/onesignal/OneSignalSDKWorker.js",
     serviceWorkerParam: { scope: "/equipment/push/onesignal/" },
+    promptOptions: {
+      slidedown: {
+        prompts: [{
+          type: "push",
+          autoPrompt: false,
+          text: {
+            actionMessage: "締切前のリマインド通知を受け取れます。通知をオンにしますか？",
+            acceptButton: "通知を許可",
+            cancelButton: "あとで"
+          }
+        }]
+      }
+    },
     welcomeNotification: { disable: true },
     notificationClickHandlerMatch: "origin",
     notificationClickHandlerAction: "focus"
