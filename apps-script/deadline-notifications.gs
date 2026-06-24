@@ -107,7 +107,7 @@ function sendOneSignalPush_(message) {
     payload: JSON.stringify({
       app_id: ONESIGNAL_APP_ID,
       target_channel: 'push',
-      included_segments: ['Subscribed Users'],
+      included_segments: ['Total Subscriptions'],
       headings: { ja: '備品購入' },
       contents: { ja: message },
       url: EQUIPMENT_SITE_URL,
