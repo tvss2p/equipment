@@ -33,11 +33,26 @@ const SYNC_TOKEN = 'bihin-sync-7f3a9c2e';
 const NOTICE_2_DAYS = '備品買い出しリクエスト締切２日前です';
 const NOTICE_1_DAY = '備品買い出しリクエスト締切前日です';
 
+// 直近に取得できた締切日を記憶しておくキー（state取得失敗時のフォールバック判定用）。
+const CACHED_DEADLINE_KEY = 'LAST_KNOWN_DEADLINE';
+
 /**
  * 毎日10:00の時間主導トリガーから実行する。
+ *
+ * state取得（同期Webアプリへの通信）に失敗した場合、その日が本来
+ * 締切2日前/前日の通知対象だった時だけ例外を投げ直してGASの障害通知メールを出す。
+ * 通知対象外の日のエラーはログに残すのみにして、無関係な日まで毎日
+ * 障害メールが届くのを防ぐ（キャッシュ済みの前回締切日を使って判定する）。
  */
 function sendDeadlineNotifications() {
-  const deadline = getDeadline_();
+  let deadline;
+  try {
+    deadline = getDeadline_();
+  } catch (error) {
+    handleStateFetchError_(error);
+    return;
+  }
+
   if (!deadline) {
     Logger.log('締切日が未設定のため、通知はありません。');
     return;
@@ -51,6 +66,22 @@ function sendDeadlineNotifications() {
   } else if (days === 1) {
     sendOnce_('NOTIFIED_1_' + deadline, NOTICE_1_DAY);
   }
+}
+
+/**
+ * state取得失敗時の扱いを決める。前回キャッシュした締切日から見て
+ * 「今日が2日前/前日通知の対象だったか」を推定し、対象だった場合のみ
+ * 元のエラーを再throwしてGASの障害通知を発生させる。
+ */
+function handleStateFetchError_(error) {
+  const cachedDeadline = PropertiesService.getScriptProperties().getProperty(CACHED_DEADLINE_KEY);
+  const days = cachedDeadline ? daysUntil_(cachedDeadline) : null;
+
+  if (days === 2 || days === 1) {
+    Logger.log('state取得に失敗しましたが、本日は通知対象日(残り' + days + '日)のため障害として報告します: ' + error);
+    throw error;
+  }
+  Logger.log('state取得に失敗しましたが、本日は通知対象日ではないためスキップします: ' + error);
 }
 
 /**
@@ -134,7 +165,11 @@ function getDeadline_() {
   const meta = requests.find(function (item) {
     return item && item.id === '__meta__';
   });
-  return meta && meta.deadline ? String(meta.deadline) : null;
+  const deadline = meta && meta.deadline ? String(meta.deadline) : null;
+  if (deadline) {
+    PropertiesService.getScriptProperties().setProperty(CACHED_DEADLINE_KEY, deadline);
+  }
+  return deadline;
 }
 
 /**
